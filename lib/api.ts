@@ -79,6 +79,28 @@ const DocumentoMejorasSchema = z.object({
   semaforo_alerta: z.enum(["VERDE", "AMARILLO", "ROJO"]),
 })
 
+// Función para detectar si el backend está disponible
+const checkBackendAvailability = async (): Promise<boolean> => {
+  try {
+    const API_BASE = getApiBaseUrl()
+    const response = await fetch(`${API_BASE}/health`, {
+      method: "GET",
+      timeout: 3000, // 3 segundos de timeout
+    })
+    return response.ok
+  } catch (error) {
+    return false
+  }
+}
+
+const switchToMockMode = () => {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("dataMode", "MOCK")
+    // Disparar evento personalizado para notificar al contexto
+    window.dispatchEvent(new CustomEvent("dataMode-changed", { detail: "MOCK" }))
+  }
+}
+
 // Cliente API
 class ApiClient {
   private async request<T>(endpoint: string, options: RequestInit = {}, schema?: z.ZodSchema<T>): Promise<T> {
@@ -106,8 +128,38 @@ class ApiClient {
       return data
     } catch (error) {
       console.error(`API request failed for ${endpoint}:`, error)
+
+      const currentMode = getDataMode()
+      if (currentMode === "API" && (error instanceof TypeError || error.message.includes("fetch"))) {
+        console.warn("Backend no disponible, cambiando automáticamente a modo MOCK")
+        switchToMockMode()
+
+        // Reintentar la llamada en modo MOCK
+        const dataMode = getDataMode()
+        if (dataMode === "MOCK") {
+          return this.handleMockRequest(endpoint, options, schema)
+        }
+      }
+
       throw error
     }
+  }
+
+  private async handleMockRequest<T>(endpoint: string, options: RequestInit, schema?: z.ZodSchema<T>): Promise<T> {
+    if (endpoint.includes("/clasificacion/clasificar")) {
+      return mockApi.clasificar(options.body as FormData) as T
+    } else if (endpoint.includes("/deteccion/crear_base_vectorial")) {
+      return mockApi.crearBaseVectorialDeteccion() as T
+    } else if (endpoint.includes("/deteccion/validar_documentos")) {
+      return mockApi.validarDocumentos() as T
+    } else if (endpoint.includes("/alert/crear_base_vectorial")) {
+      return mockApi.crearBaseVectorialAlertas() as T
+    } else if (endpoint.includes("/alert/sugerir_mejoras_alertas")) {
+      const documentoId = Number.parseInt(endpoint.split("/").pop() || "1")
+      return mockApi.sugerirMejorasAlertas(documentoId) as T
+    }
+
+    throw new Error(`Mock endpoint not implemented: ${endpoint}`)
   }
 
   // Clasificación y RUC

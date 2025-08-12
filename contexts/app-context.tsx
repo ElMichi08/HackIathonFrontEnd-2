@@ -107,6 +107,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (savedAlertsBuild) {
       dispatch({ type: "SET_LAST_ALERTS_BUILD", payload: savedAlertsBuild })
     }
+
+    const handleDataModeChange = (event: CustomEvent) => {
+      dispatch({ type: "SET_DATA_MODE", payload: event.detail })
+    }
+
+    window.addEventListener("dataMode-changed", handleDataModeChange as EventListener)
+
+    return () => {
+      window.removeEventListener("dataMode-changed", handleDataModeChange as EventListener)
+    }
   }, [])
 
   const contextValue: AppContextType = {
